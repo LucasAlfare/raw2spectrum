@@ -1,23 +1,23 @@
-# Contexto do Projeto
+# CONTEXTO DO PROJETO
 
-Estou iniciando um projeto pessoal para aprender profundamente sobre Inteligência Artificial aplicada à música. Meu objetivo **não é apenas utilizar um modelo existente**, mas compreender toda a cadeia de processamento desde o áudio bruto até uma representação simbólica (MIDI) capaz de gerar uma partitura.
+Este documento serve para contextualizar uma conversa contínua sobre um projeto de Inteligência Artificial voltado para transcrição automática de música (Automatic Music Transcription - AMT). Considere todas as informações abaixo como decisões já tomadas ou conceitos já compreendidos, evitando repetir explicações introdutórias.
 
-Sou desenvolvedor profissional, especializado em Kotlin, e possuo sólida formação musical. Já estudei cálculo, estatística e álgebra linear no passado, embora esses conhecimentos estejam enferrujados. Não quero apenas aprender a usar frameworks; quero entender a matemática, os conceitos e a arquitetura por trás das decisões.
+---
 
-Durante esta conversa ficou claro que meu objetivo não é:
+# Objetivo Final
 
-```
-MP3 → PDF
-```
+O objetivo do projeto é desenvolver, do zero, um sistema capaz de receber um arquivo de áudio (MP3, WAV, FLAC, OGG, etc.) e produzir um MIDI correspondente. A geração de partitura (MusicXML, LilyPond e PDF) será tratada como uma etapa posterior e separada.
 
-mas sim:
+O pipeline desejado é:
 
-```
+```text
 Áudio
     ↓
-Representação adequada
+Pré-processamento
     ↓
-Modelo de IA
+Representação para IA
+    ↓
+Modelo de Deep Learning
     ↓
 Eventos MIDI
     ↓
@@ -26,281 +26,156 @@ MusicXML / LilyPond
 PDF
 ```
 
-Essa mudança de perspectiva foi um dos maiores esclarecimentos da conversa.
+O foco atual **não é** a geração da partitura.
+
+O foco atual é compreender completamente a transformação:
+
+```text
+Áudio → MIDI
+```
 
 ---
 
-# Objetivo principal
+# Objetivo de Aprendizado
 
-Quero construir um modelo capaz de aprender a seguinte função:
+O objetivo principal não é apenas construir um modelo funcional.
 
-```
-f(áudio) = MIDI
-```
+Quero compreender profundamente toda a arquitetura envolvida.
 
-Onde a entrada pode ser:
+Prefiro entender cada transformação antes de utilizar bibliotecas prontas.
 
-- WAV
-- MP3
-- FLAC
-- OGG
-- qualquer formato de áudio
-
-E a saída será um MIDI representando a música.
-
-No futuro esse modelo poderá lidar com múltiplos instrumentos, mas inicialmente quero focar em piano.
-
-Não quero pensar na geração da partitura neste momento porque ela passou a ser vista apenas como uma etapa posterior de renderização.
+Meu aprendizado é orientado por compreensão dos conceitos e da matemática, não apenas pelo uso de frameworks.
 
 ---
 
-# Como passei a enxergar o problema
+# Meu Perfil
 
-Inicialmente eu imaginava que o desafio seria algo parecido com:
+- Desenvolvedor profissional.
+- Linguagem principal: Kotlin.
+- Conhecimento avançado de programação.
+- Conhecimento de música.
+- Já estudei cálculo, estatística e álgebra linear (embora precise revisar diversos conceitos).
+- Não tenho experiência prática com Deep Learning.
 
-```
-áudio
-↓
-
-detectar notas
-
-↓
-
-partitura
-```
-
-Durante a conversa compreendi que isso é simplificar demais o problema.
-
-Hoje passo a enxergar a arquitetura assim:
-
-```
-Áudio
-
-↓
-
-Pré-processamento
-
-↓
-
-Representação matemática
-
-↓
-
-Modelo
-
-↓
-
-Eventos MIDI
-
-↓
-
-Renderização
-```
-
-Essa mudança de mentalidade foi extremamente importante.
+Não preciso de explicações básicas de programação.
 
 ---
 
-# O maior aprendizado
+# Estado Atual do Projeto
 
-Percebi que a IA não deve receber diretamente um MP3.
+Ainda não comecei a desenvolver o modelo de IA.
 
-Ela normalmente recebe uma representação muito mais organizada do áudio.
+Neste momento estou construindo toda a etapa de pré-processamento e entendendo as representações dos dados.
 
-Essa representação é o espectrograma.
-
-Passei a entender que:
-
-- o áudio bruto é apenas uma sequência enorme de amplitudes;
-- o espectrograma torna explícita a distribuição das frequências ao longo do tempo;
-- isso facilita muito o trabalho da rede neural.
+Ainda estou antes da etapa de treinamento.
 
 ---
 
-# O que mais me confundiu
+# O que já compreendi
 
-Minha maior dificuldade foi entender o espectrograma.
+Durante as conversas anteriores compreendi os seguintes conceitos.
 
-Inicialmente imaginei que existisse algum "arquivo de espectrograma" padronizado.
+## O modelo não deve receber MP3 diretamente.
 
-Depois compreendi que:
+O áudio normalmente é convertido para uma representação mais adequada antes do treinamento.
 
+Essa representação normalmente é um espectrograma.
+
+---
+
+## O espectrograma
+
+Compreendi que:
+
+- espectrograma não é um formato de arquivo;
 - espectrograma é apenas uma matriz;
-- essa matriz pode ser armazenada em inúmeros formatos;
-- o importante é a informação, não o formato.
+- cada linha representa uma frequência;
+- cada coluna representa um instante no tempo;
+- cada célula representa a intensidade daquela frequência naquele instante.
 
-Mesmo depois disso continuei com dúvidas sobre:
+Em outras palavras:
 
-- como essa matriz seria gravada em disco;
-- como floats poderiam existir em um arquivo;
-- como seria possível reconstruir a matriz durante a leitura.
-
----
-
-# O que foi esclarecido
-
-Foi construída uma especificação completa de um formato fictício chamado:
-
-```
-.SPEC
-```
-
-Esse formato serviu apenas para entendimento.
-
-A especificação definiu:
-
-- cabeçalho;
-- assinatura;
-- versão;
-- quantidade de linhas;
-- quantidade de colunas;
-- sample rate;
-- FFT size;
-- window size;
-- hop size;
-- tipo dos dados;
-- ordem de armazenamento (row-major);
-- algoritmo de escrita;
-- algoritmo de leitura;
-- significado de cada campo;
-- representação dos floats em IEEE-754;
-- interpretação da matriz.
-
-Essa explicação finalmente tornou claro que:
-
-"o arquivo contém apenas bytes; quem transforma esses bytes em números é o programa durante a leitura."
-
-Esse foi outro momento importante da conversa.
-
----
-
-# Como agora enxergo o espectrograma
-
-Hoje penso nele como:
-
-```
+```text
 matriz[freq][tempo]
 ```
 
-Onde cada célula representa:
+Onde
 
-```
-energia
-```
-
-daquela frequência naquele instante.
-
-Ou seja,
-
-```
-M[linha][coluna]
+```text
+matriz[linha][coluna]
 ```
 
-não representa uma nota.
+representa energia.
 
-Representa apenas intensidade.
+Não representa notas.
 
-A IA aprenderá posteriormente a interpretar padrões dessa matriz.
+Não representa acordes.
+
+Não representa música.
+
+A interpretação musical será aprendida posteriormente pela IA.
 
 ---
 
-# O primeiro software do projeto
+## Formato .SPEC
 
-Antes eu pensava em começar treinando uma IA.
+Foi criada uma especificação fictícia apenas para facilitar o entendimento do armazenamento do espectrograma.
 
-Agora compreendi que existe uma etapa muito anterior.
+Esse formato não é um padrão existente.
 
-Meu primeiro software será um pré-processador.
+Ele foi criado apenas para compreender:
 
-Inicialmente pensei em chamá-lo de:
+- organização dos dados;
+- cabeçalho;
+- armazenamento binário;
+- representação IEEE-754;
+- leitura;
+- escrita;
+- ordem row-major.
+
+O objetivo era entender exatamente quais bytes seriam gravados em disco.
+
+---
+
+## O papel do pré-processamento
+
+Antes eu imaginava começar treinando uma IA.
+
+Hoje compreendo que existe uma etapa anterior extremamente importante.
+
+Essa etapa transforma:
+
+```text
+Áudio
+```
+
+em
+
+```text
+Representação matemática
+```
+
+Essa representação será a entrada do modelo.
+
+---
+
+# Projeto Atual
+
+O primeiro projeto criado chama-se:
 
 ```
 raw2spectrum
 ```
 
-Ele será responsável por:
+Objetivo:
 
-```
-MP3
-WAV
-FLAC
-OGG
-...
+Converter arquivos de áudio em espectrogramas.
 
-↓
+Esse projeto NÃO possui inteligência artificial.
 
-Espectrograma
-```
+Ele apenas realiza o pré-processamento necessário para futuros modelos.
 
-Sem qualquer inteligência artificial.
-
-Seu único objetivo será produzir uma representação adequada para treinamento.
-
----
-
-# Arquitetura inicial imaginada
-
-Hoje imagino o projeto dividido em ferramentas independentes.
-
-```
-raw2wav
-```
-
-Padroniza todos os formatos de áudio.
-
-↓
-
-```
-wav2spectrogram
-```
-
-Gera espectrogramas.
-
-↓
-
-```
-midi2events
-```
-
-Transforma MIDI em eventos de treinamento.
-
-↓
-
-```
-trainer
-```
-
-Treina o modelo.
-
-↓
-
-```
-inference
-```
-
-Recebe um áudio novo e produz MIDI.
-
----
-
-# Tecnologia
-
-Embora Python seja o ecossistema dominante para IA, meu foco principal continua sendo Kotlin.
-
-A intenção não é fugir do Python, mas compreender profundamente os conceitos antes de depender das ferramentas.
-
-Quero ser capaz de entender exatamente o que cada biblioteca faz.
-
----
-
-# Projeto criado
-
-Foi criado o projeto:
-
-```
-raw2spectrum
-```
-
-Descrição:
+Descrição do projeto:
 
 > A simple and educational audio preprocessing library that converts raw audio (WAV, MP3, FLAC, OGG, etc.) into spectrogram representations suitable for machine learning, audio analysis, and automatic music transcription (AMT). Designed as the first stage of an audio-to-MIDI pipeline.
 
@@ -310,92 +185,115 @@ Licença:
 MIT
 ```
 
-Tags:
+---
 
-- audio
-- audio-processing
-- spectrogram
-- stft
-- fft
-- signal-processing
-- music
-- music-information-retrieval
-- automatic-music-transcription
-- amt
-- midi
-- machine-learning
-- deep-learning
-- preprocessing
-- kotlin
+# Arquitetura imaginada atualmente
+
+A arquitetura geral atualmente pensada é:
+
+```text
+raw2wav
+
+↓
+
+raw2spectrum
+
+↓
+
+midi2events
+
+↓
+
+trainer
+
+↓
+
+inference
+```
+
+Cada ferramenta possui responsabilidade única.
+
+Ainda não sei se essa arquitetura será definitiva.
 
 ---
 
-# Forma como gosto de aprender
+# Como prefiro aprender
 
-Durante toda a conversa ficou evidente que prefiro compreender profundamente cada conceito antes de prosseguir.
+Prefiro explicações extremamente concretas.
 
-Não gosto de tratar bibliotecas como caixas-pretas.
+Sempre que possível:
 
-Sempre que surge uma abstração, procuro entender:
+- partir do baixo nível;
+- mostrar estruturas de dados;
+- mostrar bytes;
+- mostrar formatos;
+- mostrar algoritmos;
+- explicar o motivo da existência de cada etapa.
 
-- exatamente o que existe em memória;
-- exatamente quais bytes estão sendo gravados;
-- exatamente como os dados são interpretados.
+Não gosto de respostas que simplesmente dizem "a biblioteca faz isso".
 
-Explicações excessivamente abstratas tendem a gerar mais dúvidas.
+Prefiro entender primeiro.
 
-Explicações concretas, próximas do baixo nível, funcionam muito melhor para mim.
-
----
-
-# O que ainda falta entender
-
-Ainda preciso compreender profundamente:
-
-- Transformada de Fourier (FFT)
-- STFT
-- Mel Spectrogram
-- Como exatamente uma janela da STFT produz um vetor de frequências.
-- Como escolher Window Size.
-- Como escolher Hop Size.
-- Como o espectrograma muda visualmente conforme esses parâmetros.
-- Como um modelo realmente "enxerga" essa matriz.
-- Como representar corretamente o alvo (MIDI) para treinamento.
-- Como funciona o treinamento propriamente dito.
-- Como definir a função de perda.
-- Como acontece o backpropagation.
-- Como organizar um dataset grande.
-- Como ocorre a inferência.
+Depois utilizar bibliotecas.
 
 ---
 
-# Próximos passos
+# Como responder
 
-O próximo passo esperado é estudar profundamente a geração do espectrograma.
+Sempre considere que:
 
-Não quero apenas utilizar uma biblioteca.
+- já compreendo programação;
+- já compreendo música;
+- ainda estou aprendendo processamento de sinais;
+- ainda estou aprendendo Machine Learning.
 
-Quero compreender:
+Evite voltar para explicações genéricas.
 
-- por que a FFT funciona;
-- por que a STFT existe;
-- por que aparecem linhas horizontais;
-- por que surgem harmônicos;
-- como acordes aparecem na matriz;
-- como diferentes instrumentos alteram o espectrograma.
+Prefira construir o conhecimento passo a passo.
 
-Somente depois disso pretendo avançar para Deep Learning.
+Quando apresentar um conceito novo:
+
+1. explique o problema que ele resolve;
+2. explique intuitivamente;
+3. explique tecnicamente;
+4. mostre como ele se encaixa na arquitetura do projeto.
 
 ---
 
-# Filosofia deste aprendizado
+# O que ainda preciso aprender
 
-A intenção não é aprender IA rapidamente.
+Os próximos assuntos provavelmente serão estudados nesta ordem:
 
-A intenção é construir conhecimento sólido.
+1. Representação digital do áudio.
+2. FFT.
+3. STFT.
+4. Mel Spectrogram.
+5. Como a STFT gera um espectrograma.
+6. Como escolher Window Size.
+7. Como escolher Hop Size.
+8. Como interpretar visualmente um espectrograma.
+9. Como representar MIDI para treinamento.
+10. Estrutura do dataset.
+11. Arquitetura do modelo.
+12. Função de perda.
+13. Backpropagation.
+14. Processo completo de treinamento.
+15. Inferência.
 
-Quero ser capaz de implementar praticamente todo o pipeline entendendo o motivo de cada etapa.
+---
 
-Sempre que possível, prefiro construir pequenas ferramentas próprias para compreender o funcionamento interno, mesmo que posteriormente utilize bibliotecas consolidadas em produção.
+# Objetivo das próximas conversas
 
-Meu objetivo final é que, ao terminar essa jornada, eu seja capaz de olhar para um sistema de Automatic Music Transcription e entender completamente cada bloco, desde o primeiro byte do áudio até o último símbolo da partitura.
+Assuma que quero construir conhecimento sólido.
+
+Não estou procurando apenas uma implementação pronta.
+
+Quero compreender profundamente cada etapa do pipeline.
+
+Sempre que possível, estabeleça conexões entre os conceitos já aprendidos e os novos conceitos.
+
+Evite respostas superficiais.
+
+Prefiro uma explicação longa, incremental e tecnicamente correta do que uma resposta curta que esconda detalhes importantes.
+
+Considere este documento como o estado atual do projeto e continue a partir dele.
