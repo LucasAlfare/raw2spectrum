@@ -1,507 +1,252 @@
-# MREP — Especificação do Formato de Representação MIDI
+# Formato `.ROLL` (Versão 2)
 
-**Versão:** 1.0
+Gerado pela ferramenta `midi2roll`.
 
-**Status:** Experimental
+## Pra que serve
 
----
+Guarda, de forma simplificada, quais notas foram tocadas e quando — extraído de um arquivo MIDI. É o dado de **saída** do treino: é o que queremos que o modelo aprenda a prever a partir do `.SPEC`.
 
-# Objetivo
+Esse formato não guarda tudo que existe num MIDI (instrumento, força da tecla, pedal, etc). Guarda só o essencial: **qual nota, quando começou, até quando ficou tocando**.
 
-O **MREP (MIDI Representation)** é um formato binário baseado em matriz cuja finalidade é representar um arquivo MIDI de forma simples, determinística e eficiente para processamento computacional.
+## ⚠️ Importante: isto é um formato intermediário, não o resultado final
 
-Enquanto um arquivo MIDI armazena **eventos musicais** (Note On, Note Off, Program Change, etc.), um arquivo MREP armazena o **estado de cada nota ao longo do tempo**, em intervalos temporais fixos.
+**O `.ROLL` não é um arquivo MIDI, e o modelo treinado com este formato nunca vai gerar um `.mid` diretamente.**
 
-O formato foi projetado para ser utilizado em aplicações como:
+Quando você treina um modelo usando `.SPEC` como entrada e `.ROLL` como saída esperada, o que o modelo aprende a produzir é **uma matriz de números** (0, 1 ou 2), no mesmo formato deste arquivo — não um arquivo `.mid`.
 
-* Aprendizado de Máquina
-* Transcrição Automática de Música (AMT)
-* Análise Musical
-* Processamento Numérico
+Ou seja, o caminho completo, do MP3 novo até o MIDI final, tem uma etapa a mais depois do modelo:
 
-O formato é completamente independente de qualquer modelo de IA, framework ou representação de áudio.
-
----
-
-# Objetivos de Projeto
-
-* formato binário simples;
-* leitura e escrita determinísticas;
-* acesso aleatório em tempo constante;
-* fácil implementação em qualquer linguagem;
-* independente de espectrogramas;
-* independente de datasets;
-* independente de frameworks de Deep Learning;
-* otimizado para processamento numérico.
-
----
-
-# Extensão
-
-```text
-.mrep
+```
+MP3 novo
+   ↓ (gera o espectro)
+.SPEC
+   ↓ (modelo treinado faz a previsão)
+matriz .ROLL prevista   ← é AQUI que o modelo para. Isto NÃO é um MIDI ainda.
+   ↓ (passo de conversão — ver seção "Convertendo a saída do modelo em MIDI", mais abaixo)
+arquivo .mid final
 ```
 
----
+Esse passo de conversão é obrigatório e precisa ser feito por fora do modelo, depois que ele termina de prever. Sem esse passo, você fica só com uma matriz de números — não é possível abrir isso num player de música ou numa DAW.
 
-# Endianness
+A boa notícia: esse passo de conversão é simples, direto, e não tem perda de informação essencial no meio do caminho — a matriz `.ROLL` já contém tudo que é necessário (pitch, início, fim de cada nota) para montar um MIDI correto. É diferente do que acontece com o `.SPEC`: lá, informação necessária pra reconstruir o áudio (a fase da onda) foi descartada de propósito e não tem como recuperar. Aqui, nada essencial foi perdido — só falta reorganizar os dados no formato de arquivo `.mid`, que é uma tarefa mecânica, coberta na seção abaixo.
 
-Todos os valores inteiros com mais de um byte são armazenados em **Little Endian**.
+O que o `.mid` final **não** vai ter, porque foram descartados de propósito na hora de gerar o `.ROLL`: instrumento, força da tecla (velocity), pedal de sustain. O MIDI final terá as notas certas, no tempo certo — só não terá a "textura" de interpretação do MIDI original usado no treino.
 
----
+## Ideia central
 
-# Magic Number
+Pega cada nota do MIDI e simplifica ela pra 3 informações: qual tecla, em que momento começou a tocar, em que momento parou. Junta isso numa tabela parecida com a do `.SPEC` (mesmas colunas de tempo, uma coluna por tecla do piano), onde cada célula guarda um destes três valores:
 
-ASCII
-
-```text
-MREP
+```
+0 = silêncio (nenhuma nota tocando)
+1 = a nota começou exatamente agora (ataque)
+2 = a nota continua tocando (mas não é o começo)
 ```
 
-Hexadecimal
+Exemplo, olhando só a coluna da tecla "Dó central":
 
-```text
-4D 52 45 50
 ```
+tempo:     0    1    2    3    4    5    6
+valor:     0    1    2    2    0    1    2
+                ↑ nota começa      ↑ nota começa de novo
+```
+
+O valor `1` sempre marca o instante exato do ataque — isso é importante mesmo em uma matriz só, porque se duas notas iguais tocarem coladas (sem silêncio entre elas), o `1` ainda avisa "começou uma nova aqui", em vez de parecer uma nota só, mais longa.
 
 ---
 
-# Estrutura Geral
+## Estrutura do arquivo
 
-```text
-+----------------------+
-| Cabeçalho (32 bytes) |
-+----------------------+
-| Frame 0              |
-+----------------------+
-| Frame 1              |
-+----------------------+
-| Frame 2              |
-+----------------------+
-| ...                  |
-+----------------------+
 ```
++------------+
+| Cabeçalho  |
++------------+
+| Tabela     |
++------------+
+```
+
+## Cabeçalho — byte a byte
+
+| Posição (offset) | Tamanho | O que é |
+|---|---|---|
+| 0 | 4 bytes | Letras "ROLL" (identifica o arquivo) |
+| 4 | 1 byte | Número da versão do formato (`2`) |
+| 5 | 4 bytes | Quantas colunas de tempo a tabela tem |
+| 9 | 4 bytes | Sample rate (mesmo valor do `.SPEC` correspondente) |
+| 13 | 4 bytes | Hop size (mesmo valor do `.SPEC` correspondente) |
+
+Total do cabeçalho: **17 bytes**
+
+### Sobre as teclas representadas
+
+A tabela sempre cobre as 88 teclas de um piano (da nota 21 até a nota 108, numeração MIDI padrão). Esse intervalo é fixo e não muda de arquivo pra arquivo, por isso não precisa ser gravado no cabeçalho — é uma regra combinada do projeto.
+
+### Sobre sample rate e hop size
+
+Servem só como conferência: garantem que este `.ROLL` foi construído usando a mesma escala de tempo do `.SPEC` correspondente. Antes de usar os dois arquivos juntos no treino, vale checar se esses dois números batem entre eles.
 
 ---
 
-# Cabeçalho
+## A tabela de dados
 
-| Offset | Tamanho | Tipo    | Campo                             |
-| -----: | ------: | ------- | --------------------------------- |
-|      0 |       4 | char[4] | Magic                             |
-|      4 |       2 | uint16  | Versão                            |
-|      6 |       2 | uint16  | Reservado                         |
-|      8 |       4 | uint32  | Duração do Frame (microssegundos) |
-|     12 |       4 | uint32  | Quantidade de Frames              |
-|     16 |       2 | uint16  | Quantidade de Notas               |
-|     18 |       2 | uint16  | Tipo de Valor                     |
-|     20 |      12 | bytes   | Reservado                         |
+Depois do cabeçalho (a partir do byte 17), vem a tabela, uma coluna de tempo por vez, e dentro dela, uma tecla por vez:
 
-Tamanho total do cabeçalho:
-
-```text
-32 bytes
 ```
-
----
-
-# Campos do Cabeçalho
-
-## Magic
-
-Sempre:
-
-```text
-MREP
-```
-
----
-
-## Versão
-
-Versão atual:
-
-```text
-1
-```
-
----
-
-## Reservado
-
-Reservado para futuras versões.
-
-Todos os bytes devem ser preenchidos com zero.
-
----
-
-## Duração do Frame
-
-Tempo representado por cada frame.
-
-Unidade:
-
-```text
-microssegundos
-```
-
-Exemplo:
-
-```text
-10000
-```
-
-equivale a
-
-```text
-10 milissegundos
-```
-
-Esse valor torna o arquivo completamente autossuficiente, permitindo que qualquer programa interprete corretamente sua resolução temporal.
-
----
-
-## Quantidade de Frames
-
-Quantidade total de frames armazenados no arquivo.
-
----
-
-## Quantidade de Notas
-
-Na versão 1:
-
-```text
-128
-```
-
-Existe uma coluna para cada nota MIDI (0–127).
-
----
-
-## Tipo de Valor
-
-Define o significado de cada célula da matriz.
-
-Na versão 1:
-
-```text
-1 = Estado Binário da Nota
-```
-
-Versões futuras poderão adicionar outros tipos.
-
----
-
-# Organização dos Dados
-
-Após o cabeçalho são armazenados todos os frames, em sequência.
-
-```text
-Frame 0
-128 bytes
-
-Frame 1
-128 bytes
-
-Frame 2
-128 bytes
-
+tempo 0: tecla 21, tecla 22, ..., tecla 108
+tempo 1: tecla 21, tecla 22, ..., tecla 108
 ...
 ```
 
-Cada frame possui exatamente **128 bytes**.
-
-Cada byte representa uma nota MIDI.
+Cada valor ocupa **1 byte** (só precisa guardar 0, 1 ou 2).
 
 ---
 
-# Organização da Matriz
+## Preparando os dados do MIDI antes de gravar
 
-Os dados são organizados como:
+Antes de virar `.ROLL`, os dados do MIDI passam por uma limpeza simples:
 
-```text
-matriz[frame][nota]
-```
-
-onde:
-
-* **frame** representa o tempo;
-* **nota** representa uma das 128 notas MIDI.
+- Ignora faixas de bateria
+- Ignora instrumento, força da tecla (velocity), pedal e qualquer outro detalhe — fica só pitch, início e fim de cada nota
+- Se várias notas tocam em faixas diferentes ao mesmo tempo, todas entram juntas na mesma tabela
 
 ---
 
-# Valores das Células
+## Como escrever um arquivo `.ROLL`
 
-Cada célula ocupa exatamente **1 byte sem sinal (UInt8)**.
+Você precisa ter em mãos: a lista de notas já limpa (pitch, início em segundos, fim em segundos), o sample rate e o hop size do `.SPEC` correspondente, e quantas colunas de tempo esse `.SPEC` tem.
 
-Valores permitidos:
+```
+função escrever_roll(notas, sample_rate, hop_size, total_colunas):
 
-```text
-0
+    cria uma tabela vazia [total_colunas][88], tudo preenchido com 0
+
+    para cada nota (pitch, inicio, fim) na lista de notas:
+
+        se pitch for menor que 21 ou maior que 108:
+            ignora essa nota
+
+        coluna_da_tecla = pitch - 21
+
+        frame_inicio = arredonda(inicio * sample_rate / hop_size)
+        frame_fim    = arredonda(fim * sample_rate / hop_size)
+
+        tabela[frame_inicio][coluna_da_tecla] = 1
+
+        para frame de (frame_inicio + 1) até (frame_fim - 1):
+            tabela[frame][coluna_da_tecla] = 2
+
+    escreve "ROLL"
+    escreve versão = 2
+    escreve total_colunas
+    escreve sample_rate
+    escreve hop_size
+
+    para cada linha de tempo da tabela:
+        para cada uma das 88 teclas:
+            escreve o valor (0, 1 ou 2) como 1 byte
 ```
 
-A nota está desligada.
+## Como ler um arquivo `.ROLL`
 
-```text
-1
 ```
+função ler_roll(arquivo):
 
-A nota está ligada.
+    lê 4 bytes, confirma que é "ROLL"
+    lê versão
+    lê total_colunas
+    lê sample_rate
+    lê hop_size
 
-Nenhum outro valor é válido na versão 1.
+    cria uma tabela vazia [total_colunas][88]
 
----
+    para cada linha de tempo:
+        para cada uma das 88 teclas:
+            lê 1 byte
+            guarda na tabela
 
-# Exemplo
-
-Suponha que durante determinado frame estejam soando:
-
-```text
-C4
-E4
-G4
-```
-
-Então o frame conterá:
-
-```text
-...
-
-Nota 60 = 1
-
-Nota 64 = 1
-
-Nota 67 = 1
-
-...
-```
-
-Todas as demais posições conterão:
-
-```text
-0
+    devolve tabela, sample_rate, hop_size
 ```
 
 ---
 
-# Tamanho do Arquivo
+## Convertendo a saída do modelo em MIDI
 
-O tamanho do arquivo é determinístico.
+Depois que o modelo já foi treinado e você passa um MP3 novo por ele, o resultado é uma matriz no formato `.ROLL` (valores 0/1/2). Esta seção explica como transformar essa matriz numa lista de notas, e depois num arquivo `.mid` de verdade.
 
-```text
-32 + (QuantidadeDeFrames × 128)
+### Passo 1 — matriz vira lista de notas
+
+Percorre a matriz procurando, para cada tecla, blocos contínuos que começam com `1` (onset) e seguem com `2` (sustain), até voltar pra `0` (silêncio) ou até aparecer um novo `1` (nova nota, sem silêncio no meio).
+
+```
+função matriz_para_notas(tabela, sample_rate, hop_size):
+
+    notas = lista vazia
+    nota_ativa = {}  // guarda, por tecla, em que frame a nota atual começou
+
+    para cada frame (linha) da tabela:
+        para cada tecla (coluna) da tabela:
+
+            valor = tabela[frame][tecla]
+
+            se valor == 1:
+                // uma nota nova está começando
+                se tecla já estava em nota_ativa:
+                    // a nota anterior nessa tecla termina aqui, uma nova começa
+                    fecha_nota(notas, nota_ativa, tecla, frame_atual=frame, sample_rate, hop_size)
+                nota_ativa[tecla] = frame
+
+            senão se valor == 0 e tecla está em nota_ativa:
+                // a nota que estava tocando parou
+                fecha_nota(notas, nota_ativa, tecla, frame_atual=frame, sample_rate, hop_size)
+
+    // fecha qualquer nota que ainda estava tocando no último frame
+    para cada tecla restante em nota_ativa:
+        fecha_nota(notas, nota_ativa, tecla, frame_atual=total_de_frames, sample_rate, hop_size)
+
+    devolve notas
+
+
+função fecha_nota(notas, nota_ativa, tecla, frame_atual, sample_rate, hop_size):
+
+    frame_inicio = nota_ativa[tecla]
+
+    inicio_segundos = frame_inicio * hop_size / sample_rate
+    fim_segundos = frame_atual * hop_size / sample_rate
+    pitch = tecla + 21
+
+    notas.adiciona( (pitch, inicio_segundos, fim_segundos) )
+
+    remove tecla de nota_ativa
 ```
 
-bytes.
+O resultado é uma lista simples: `[(pitch, início_em_segundos, fim_em_segundos), ...]`.
+
+### Passo 2 — lista de notas vira arquivo `.mid`
+
+Isso é feito com uma biblioteca pronta (`pretty_midi`, em Python), sem necessidade de lidar com bytes manualmente:
+
+```
+importa pretty_midi
+
+midi = novo PrettyMIDI()
+instrumento = novo Instrument(programa=0)  // 0 = piano acústico
+
+para cada (pitch, inicio, fim) na lista de notas:
+    instrumento.notas.adiciona(
+        Note(velocity=100, pitch=pitch, start=inicio, end=fim)
+    )
+    // velocity fixa em 100 porque o modelo não prevê força da tecla — 
+    // é só um valor padrão pra o arquivo MIDI ser válido
+
+midi.instrumentos.adiciona(instrumento)
+midi.salva("resultado_final.mid")
+```
+
+Pronto — esse é o arquivo `.mid` que o usuário final recebe, com as notas na hora certa.
 
 ---
 
-# Algoritmo de Escrita
+## Resultado final esperado
 
-## Entrada
+**Do formato `.ROLL` em si:** uma matriz numérica (array 2D, valores 0/1/2) representando quais notas soam em cada instante, alinhada exatamente com a mesma linha do tempo do `.SPEC` correspondente. É o alvo que o modelo tenta prever durante o treino.
 
-```text
-Arquivo MIDI
-```
-
-## Saída
-
-```text
-Arquivo MREP
-```
-
----
-
-### Passo 1
-
-Ler o arquivo MIDI.
-
-Reconstruir todas as notas.
-
-Cada nota deve possuir:
-
-```text
-pitch
-
-tempoInicial
-
-tempoFinal
-```
-
----
-
-### Passo 2
-
-Determinar a duração total da música.
-
----
-
-### Passo 3
-
-Calcular
-
-```text
-QuantidadeDeFrames =
-ceil(duraçãoTotal / duraçãoDoFrame)
-```
-
----
-
-### Passo 4
-
-Criar uma matriz
-
-```text
-QuantidadeDeFrames × 128
-```
-
-Inicializar todas as posições com zero.
-
----
-
-### Passo 5
-
-Para cada nota:
-
-```text
-frameInicial =
-floor(tempoInicial / duraçãoDoFrame)
-
-frameFinal =
-ceil(tempoFinal / duraçãoDoFrame)
-```
-
-Então:
-
-```text
-para frame = frameInicial até frameFinal
-
-    matriz[frame][pitch] = 1
-```
-
----
-
-### Passo 6
-
-Escrever o cabeçalho.
-
----
-
-### Passo 7
-
-Escrever todos os frames em sequência.
-
-Cada frame possui exatamente:
-
-```text
-128 bytes
-```
-
-Sem separadores.
-
-Sem compressão.
-
-Sem metadados entre os frames.
-
----
-
-# Pseudocódigo de Escrita
-
-```text
-notas = lerMidi()
-
-duracao = maiorTempoFinal(notas)
-
-quantidadeDeFrames =
-ceil(duracao / duracaoDoFrame)
-
-matriz =
-zeros(quantidadeDeFrames, 128)
-
-para cada nota
-
-    inicio =
-    floor(nota.tempoInicial / duracaoDoFrame)
-
-    fim =
-    ceil(nota.tempoFinal / duracaoDoFrame)
-
-    para frame = inicio até fim
-
-        matriz[frame][nota.pitch] = 1
-
-escreverCabecalho()
-
-para cada frame
-
-    escrever(frame)
-```
-
----
-
-# Algoritmo de Leitura
-
-1. Abrir o arquivo.
-2. Verificar o Magic Number.
-3. Ler o cabeçalho.
-4. Alocar a matriz.
-5. Ler todos os frames.
-
----
-
-# Pseudocódigo de Leitura
-
-```text
-cabecalho = lerCabecalho()
-
-matriz =
-novaMatriz(
-    cabecalho.quantidadeDeFrames,
-    cabecalho.quantidadeDeNotas
-)
-
-para frame
-
-    para nota
-
-        matriz[frame][nota] =
-        lerUInt8()
-```
-
----
-
-# Complexidade
-
-Escrita:
-
-```text
-O(número de notas + número de frames ativos)
-```
-
-Leitura:
-
-```text
-O(QuantidadeDeFrames × 128)
-```
-
-Acesso aleatório a qualquer nota em qualquer frame:
-
-```text
-O(1)
-```
-
----
-
-# Por que a Velocity não é armazenada?
-
-A versão 1 do formato armazena **apenas o estado binário de cada nota** (ligada ou desligada).
-
-Essa decisão foi tomada pelos seguintes motivos:
-
-* o principal objetivo da Transcrição Automática de Música é determinar **quais notas estão ativas ao longo do tempo**;
-* representar apenas o estado ligado/desligado simplifica significativamente a estrutura dos dados;
-* a ausência da velocity reduz a complexidade da representação e do treinamento dos modelos;
-* a estimativa da intensidade de cada nota pode ser tratada futuramente como uma tarefa independente.
-
-Nada impede que versões futuras do formato adicionem suporte à velocity ou a outras informações expressivas, mantendo compatibilidade com a estrutura básica definida nesta especificação.
+**Do pipeline completo (MP3 novo → resultado):** um arquivo `.mid` de verdade, com as notas certas nos tempos certos, gerado em duas etapas — primeiro o modelo prevê a matriz `.ROLL`, depois essa matriz é convertida em MIDI pelo processo descrito acima. O `.ROLL` sozinho, produzido pelo modelo, **não é o entregável final** — é uma etapa intermediária necessária antes de chegar no arquivo `.mid`.
